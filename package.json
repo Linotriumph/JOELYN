@@ -1,0 +1,34 @@
+{
+  "name": "joelyn-background-jobs",
+  "version": "1.0.0",
+  "description": "JOELYN Background Jobs System - Task 2 Product Engineering Bootcamp",
+  "main": "src/api/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/api/server.js",
+    "worker": "node src/worker/workerRunner.js",
+    "migrate": "node src/db/migrations.js",
+    "test": "node --test tests/jobs.test.js",
+    "test:concurrency": "node tests/scenarios/test1_concurrency.js",
+    "test:failure": "node tests/scenarios/test2_force_failure.js",
+    "test:kill-worker": "node tests/scenarios/test3_worker_crash.js",
+    "test:idempotency": "node tests/scenarios/test4_idempotency.js",
+    "test:two-workers": "node tests/scenarios/test5_two_workers.js",
+    "test:all-scenarios": "node tests/scenarios/run_all_scenarios.js"
+  },
+  "keywords": [
+    "background-jobs",
+    "worker",
+    "idempotency",
+    "exponential-backoff",
+    "dead-letter-queue",
+    "sqlite"
+  ],
+  "author": "JOELYN Engineering",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "pdfkit": "^0.16.0"
+  }
+}

@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Environment variables
+.env
+
+# Local Database & Storage output
+data/
+storage/
+*.db
+*.db-wal
+*.db-shm
+*.pdf
+
+# Logs & temp
+*.log
+.DS_Store
+Thumbs.db

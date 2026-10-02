@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JOELYN — Background Jobs & Worker System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <span class="logo-badge">JOELYN</span>
+        <span class="brand-sub">Background Job System</span>
+      </div>
+      <div class="stats-bar" id="statsBar">
+        <div class="stat-pill stat-total"><span class="stat-label">Total:</span> <span id="statTotal">0</span></div>
+        <div class="stat-pill stat-pending"><span class="stat-label">Pending:</span> <span id="statPending">0</span></div>
+        <div class="stat-pill stat-processing"><span class="stat-label">Processing:</span> <span id="statProcessing">0</span></div>
+        <div class="stat-pill stat-succeeded"><span class="stat-label">Succeeded:</span> <span id="statSucceeded">0</span></div>
+        <div class="stat-pill stat-dead"><span class="stat-label">Dead:</span> <span id="statDead">0</span></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container">
+    <!-- SECTION 1: TRIGGER A JOB -->
+    <section class="card" id="triggerSection">
+      <div class="card-header">
+        <h2>1. Enqueue Background Job</h2>
+        <span class="badge-endpoint">POST /api/jobs (HTTP 202)</span>
+      </div>
+      <p class="card-desc">
+        Submits a slow PDF generation task. The API enqueues the job and responds immediately with <code>202 Accepted</code> without blocking the HTTP request thread.
+      </p>
+
+      <form id="jobForm" class="form-grid">
+        <div class="form-group">
+          <label for="reportTitle">Report Title</label>
+          <input type="text" id="reportTitle" value="Q4 Executive Audit & Growth Synthesis" required />
+        </div>
+
+        <div class="form-group">
+          <label for="department">Department</label>
+          <input type="text" id="department" value="Platform Engineering" required />
+        </div>
+
+        <div class="form-group">
+          <label for="idempotencyKey">Idempotency Key <span class="label-hint">(Enforced at DB level)</span></label>
+          <div class="input-with-action">
+            <input type="text" id="idempotencyKey" required />
+            <button type="button" id="btnGenerateKey" class="btn-secondary btn-sm" title="Generate UUID">New Key</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="maxAttempts">Max Retry Attempts</label>
+          <input type="number" id="maxAttempts" value="3" min="1" max="10" required />
+        </div>
+
+        <div class="form-group full-width checkbox-group">
+          <label class="checkbox-container">
+            <input type="checkbox" id="forceFail" />
+            <span class="checkmark"></span>
+            <span class="checkbox-text">
+              <strong>Simulate 100% Failure & Break-it Mode</strong>
+              <small>Worker will deliberately fail attempts to demonstrate exponential backoff, jitter, and dead-letter transition.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="form-actions full-width">
+          <button type="submit" id="btnEnqueue" class="btn-primary">
+            <span class="btn-text">Enqueue Background Job</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Immediate Enqueue Feedback -->
+      <div id="enqueueResult" class="enqueue-banner hidden">
+        <div class="banner-title">
+          <span class="status-indicator"></span>
+          <span id="bannerTitleText">Job Accepted (HTTP 202)</span>
+        </div>
+        <div class="banner-details">
+          <div><strong>Job ID:</strong> <code id="bannerJobId">-</code></div>
+          <div><strong>Status:</strong> <span id="bannerStatus" class="status-tag tag-pending">pending</span></div>
+          <div><strong>Idempotency:</strong> <span id="bannerIdempotency">-</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: LIVE JOB STATUS CHECKER -->
+    <section class="card" id="statusSection">
+      <div class="card-header">
+        <h2>2. Job Status Inspector</h2>
+        <span class="badge-endpoint">GET /api/jobs/:id</span>
+      </div>
+      <p class="card-desc">Polls the current execution status, retry counts, timing, and error logs.</p>
+
+      <div class="search-bar">
+        <input type="text" id="lookupJobId" placeholder="Enter Job ID to track..." />
+        <button type="button" id="btnLookup" class="btn-secondary">Inspect Job</button>
+      </div>
+
+      <div id="statusViewer" class="status-details-box hidden">
+        <div class="status-header-row">
+          <div>
+            <span class="field-label">Current Status:</span>
+            <span id="viewStatus" class="status-tag tag-pending">pending</span>
+          </div>
+          <div id="downloadContainer" class="hidden">
+            <a id="btnDownloadReport" href="#" target="_blank" class="btn-success btn-sm">📄 Download Generated PDF</a>
+          </div>
+        </div>
+
+        <div class="details-grid">
+          <div class="detail-item">
+            <span class="d-label">Job ID</span>
+            <span class="d-val"><code id="viewJobId">-</code></span>
+          </div>
+          <div class="detail-item">
+            <span class="d-label">Attempts</span>
+            <span class="d-val" id="viewAttempts">0 / 3</span>
+          </div>
+          <div class="detail-item">
+            <span class="d-label">Idempotency Key</span>
+            <span class="d-val"><code id="viewIdempotencyKey">-</code></span>
+          </div>
+          <div class="detail-item">
+            <span class="d-label">Next Scheduled Run (runAt)</span>
+            <span class="d-val" id="viewRunAt">-</span>
+          </div>
+          <div class="detail-item">
+            <span class="d-label">Created At</span>
+            <span class="d-val" id="viewCreatedAt">-</span>
+          </div>
+          <div class="detail-item">
+            <span class="d-label">Finished At</span>
+            <span class="d-val" id="viewFinishedAt">-</span>
+          </div>
+        </div>
+
+        <div id="errorBox" class="error-log-box hidden">
+          <span class="error-log-title">Last Error Recorded:</span>
+          <pre id="viewLastError"></pre>
+        </div>
+
+        <div id="resultBox" class="result-log-box hidden">
+          <span class="result-log-title">Worker Output Result:</span>
+          <pre id="viewResult"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: DEAD-LETTER QUEUE VIEW -->
+    <section class="card" id="dlqSection">
+      <div class="card-header">
+        <h2>3. Dead-Letter Queue (DLQ) View</h2>
+        <span class="badge-endpoint">GET /api/jobs/dead &amp; POST /api/jobs/:id/retry</span>
+      </div>
+      <p class="card-desc">
+        Jobs that exhausted all configured retries are moved to <strong>dead</strong>. Inspect failure reasons and manually retry them back to <strong>pending</strong>.
+      </p>
+
+      <div class="table-container">
+        <table class="job-table" id="deadTable">
+          <thead>
+            <tr>
+              <th>Job ID</th>
+              <th>Type</th>
+              <th>Attempts</th>
+              <th>Last Error</th>
+              <th>Created</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="deadTableBody">
+            <tr class="empty-row">
+              <td colspan="6">No dead jobs in queue. System is healthy!</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- SECTION 4: RECENT JOBS STREAM -->
+    <section class="card" id="recentSection">
+      <div class="card-header">
+        <h2>4. Recent Jobs Stream</h2>
+        <button id="btnRefreshJobs" class="btn-secondary btn-xs">Refresh</button>
+      </div>
+      <div class="table-container">
+        <table class="job-table" id="recentTable">
+          <thead>
+            <tr>
+              <th>Job ID</th>
+              <th>Status</th>
+              <th>Attempts</th>
+              <th>Idempotency Key</th>
+              <th>Created</th>
+              <th>Inspect</th>
+            </tr>
+          </thead>
+          <tbody id="recentTableBody">
+            <tr class="empty-row">
+              <td colspan="6">No recent jobs found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <div class="footer-container">
+      <p>JOELYN Background Job Worker System • Product Engineering Bootcamp Task 2</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
